@@ -476,7 +476,12 @@ class MultimodalDisplay:
             y_offset += bar_height + 4
 
 
-async def run_multimodal_detection(camera_index: int = 0) -> None:
+async def run_multimodal_detection(
+    camera_index: int = 0,
+    facial_model: str = "trpakov/vit-face-expression",
+    speech_model: str = "superb/wav2vec2-base-superb-er",
+    device: str = "cpu",
+) -> None:
     """Run multimodal emotion detection using high-level EmotionDetector API."""
 
     print("=" * 50)
@@ -484,12 +489,17 @@ async def run_multimodal_detection(camera_index: int = 0) -> None:
     print("Using EmotionDetector high-level API")
     print("Video (Facial) + Audio (Speech) + FUSION")
     print("=" * 50)
+    print(f"\nFacial model: {facial_model}")
+    print(f"Speech model: {speech_model}")
+    print(f"Device: {device}")
     print("\nInitializing detector...\n")
 
-    # Configure detector - audio always enabled, no VLA for realtime
+    # Configure detector with configurable models
     config = Config(
-        device="cpu",
+        device=device,
         vla_enabled=False,
+        facial_emotion_model=facial_model,
+        speech_emotion_model=speech_model,
         fusion_strategy="confidence",
         fusion_confidence_threshold=0.3,
         frame_skip=2,
@@ -565,13 +575,36 @@ def main() -> None:
         default=0,
         help="Camera device index (default: 0)",
     )
+    parser.add_argument(
+        "--facial-model",
+        type=str,
+        default="trpakov/vit-face-expression",
+        help="HuggingFace model ID for facial emotion recognition",
+    )
+    parser.add_argument(
+        "--speech-model",
+        type=str,
+        default="superb/wav2vec2-base-superb-er",
+        help="HuggingFace model ID for speech emotion recognition",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cpu",
+        help="Device to use: cpu, cuda, or mps (default: cpu)",
+    )
 
     args = parser.parse_args()
 
     # Handle Ctrl+C gracefully
     signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
 
-    asyncio.run(run_multimodal_detection(camera_index=args.camera))
+    asyncio.run(run_multimodal_detection(
+        camera_index=args.camera,
+        facial_model=args.facial_model,
+        speech_model=args.speech_model,
+        device=args.device,
+    ))
 
 
 if __name__ == "__main__":
