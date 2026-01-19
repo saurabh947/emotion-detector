@@ -4,10 +4,10 @@ from typing import Any
 
 import numpy as np
 
-from emotion_detector.core.config import ModelConfig
-from emotion_detector.core.types import VoiceDetection
-from emotion_detector.inputs.base import AudioChunk
-from emotion_detector.models.base import BaseModel
+from emotion_detection_action.core.config import ModelConfig
+from emotion_detection_action.core.types import VoiceDetection
+from emotion_detection_action.inputs.base import AudioChunk
+from emotion_detection_action.models.base import BaseModel
 
 # Try to import webrtcvad
 try:

@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from emotion_detector.inputs.base import BaseInput, VideoFrame
+from emotion_detection_action.inputs.base import BaseInput, VideoFrame
 
 
 class ImageInput(BaseInput[VideoFrame]):

@@ -2,8 +2,8 @@
 
 import pytest
 
-from emotion_detector.core.config import Config, ModelConfig
-from emotion_detector.core.types import ProcessingMode
+from emotion_detection_action.core.config import Config, ModelConfig
+from emotion_detection_action.core.types import ProcessingMode
 
 
 class TestModelConfig:

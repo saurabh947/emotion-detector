@@ -2,7 +2,7 @@
 
 import pytest
 
-from emotion_detector.core.types import (
+from emotion_detection_action.core.types import (
     BoundingBox,
     EmotionLabel,
     EmotionScores,
@@ -11,7 +11,7 @@ from emotion_detector.core.types import (
     SpeechEmotionResult,
     VoiceDetection,
 )
-from emotion_detector.emotion.fusion import EmotionFusion
+from emotion_detection_action.emotion.fusion import EmotionFusion
 
 
 def create_facial_result(

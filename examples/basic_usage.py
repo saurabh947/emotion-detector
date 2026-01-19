@@ -11,7 +11,7 @@ Supported emotions:
 
 from pathlib import Path
 
-from emotion_detector import Config, EmotionDetector
+from emotion_detection_action import Config, EmotionDetector
 
 
 def process_image(image_path: str) -> None:

@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from emotion_detector.actions.logging_handler import MockActionHandler
-from emotion_detector.core.config import Config
-from emotion_detector.core.types import (
+from emotion_detection_action.actions.logging_handler import MockActionHandler
+from emotion_detection_action.core.config import Config
+from emotion_detection_action.core.types import (
     ActionCommand,
     BoundingBox,
     DetectionResult,
@@ -15,7 +15,7 @@ from emotion_detector.core.types import (
     FacialEmotionResult,
     PipelineResult,
 )
-from emotion_detector.emotion.fusion import EmotionFusion
+from emotion_detection_action.emotion.fusion import EmotionFusion
 
 
 class TestPipelineIntegration:
@@ -111,7 +111,7 @@ class TestPipelineIntegration:
         )
 
         # Create speech result (simulated)
-        from emotion_detector.core.types import SpeechEmotionResult, VoiceDetection
+        from emotion_detection_action.core.types import SpeechEmotionResult, VoiceDetection
 
         voice = VoiceDetection(
             is_speech=True,
@@ -259,7 +259,7 @@ class TestConfigIntegration:
             confidence=0.9,
         )
 
-        from emotion_detector.core.types import SpeechEmotionResult, VoiceDetection
+        from emotion_detection_action.core.types import SpeechEmotionResult, VoiceDetection
 
         voice = VoiceDetection(is_speech=True, confidence=0.9, start_time=0.0, end_time=1.0)
         speech = SpeechEmotionResult(

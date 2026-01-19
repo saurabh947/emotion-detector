@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from emotion_detector.core.types import ActionCommand, EmotionResult
+from emotion_detection_action.core.types import ActionCommand, EmotionResult
 
 
 class BaseActionHandler(ABC):

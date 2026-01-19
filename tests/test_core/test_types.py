@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from emotion_detector.core.types import (
+from emotion_detection_action.core.types import (
     ActionCommand,
     BoundingBox,
     DetectionResult,

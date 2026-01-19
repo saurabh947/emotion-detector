@@ -1,4 +1,4 @@
-# Emotion Detector SDK
+# Emotion Detection Action SDK
 
 Human emotion detection SDK for robotics using Vision-Language-Action (VLA) models.
 
@@ -17,14 +17,14 @@ Human emotion detection SDK for robotics using Vision-Language-Action (VLA) mode
 ## Installation
 
 ```bash
-pip install emotion-detector
-pip install emotion-detector[vla]  # For VLA support (requires GPU)
+pip install emotion-detection-action
+pip install emotion-detection-action[vla]  # For VLA support (requires GPU)
 ```
 
 ## Quick Start
 
 ```python
-from emotion_detector import EmotionDetector, Config
+from emotion_detection_action import EmotionDetector, Config
 
 config = Config(device="cuda", vla_enabled=False)
 
@@ -95,7 +95,7 @@ Input Sources → Detection Layer → Emotion Analysis → VLA Model → Actions
 Extend `BaseActionHandler` to integrate with your robot:
 
 ```python
-from emotion_detector.actions.base import BaseActionHandler
+from emotion_detection_action.actions.base import BaseActionHandler
 
 class MyRobotHandler(BaseActionHandler):
     def connect(self) -> bool: ...
@@ -114,8 +114,7 @@ detector = EmotionDetector(config, action_handler=MyRobotHandler())
 | Script | Description |
 |--------|-------------|
 | `examples/basic_usage.py` | Image and video processing |
-| `examples/realtime_webcam.py` | Webcam with visualization |
-| `examples/realtime_multimodal.py` | Separate video + audio panels |
+| `examples/realtime_multimodal.py` | Real-time webcam + mic with 3 panels (facial, audio, fused) |
 | `examples/batch_processing.py` | Multi-file processing with reports |
 
 ## Development

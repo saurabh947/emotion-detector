@@ -19,8 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from emotion_detector import Config, EmotionDetector
-from emotion_detector.core.types import PipelineResult
+from emotion_detection_action import Config, EmotionDetector
+from emotion_detection_action.core.types import PipelineResult
 
 
 def analyze_results(results: list[PipelineResult]) -> dict[str, Any]:

@@ -2,9 +2,9 @@
 
 import pytest
 
-from emotion_detector.core.config import ModelConfig
-from emotion_detector.models.base import BaseModel
-from emotion_detector.models.registry import ModelRegistry, get_registry
+from emotion_detection_action.core.config import ModelConfig
+from emotion_detection_action.models.base import BaseModel
+from emotion_detection_action.models.registry import ModelRegistry, get_registry
 
 
 class DummyModel(BaseModel[str, str]):

@@ -2,8 +2,8 @@
 
 from typing import Any, Callable
 
-from emotion_detector.actions.base import BaseActionHandler
-from emotion_detector.core.types import ActionCommand, EmotionResult
+from emotion_detection_action.actions.base import BaseActionHandler
+from emotion_detection_action.core.types import ActionCommand, EmotionResult
 
 
 class LoggingActionHandler(BaseActionHandler):

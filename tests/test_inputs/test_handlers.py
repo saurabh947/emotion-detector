@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from emotion_detector.inputs.base import AudioChunk, VideoFrame
-from emotion_detector.inputs.image import ImageInput
+from emotion_detection_action.inputs.base import AudioChunk, VideoFrame
+from emotion_detection_action.inputs.image import ImageInput
 
 
 class TestVideoFrame:

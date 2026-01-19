@@ -5,27 +5,27 @@ from typing import AsyncIterator
 
 import numpy as np
 
-from emotion_detector.actions.base import BaseActionHandler
-from emotion_detector.actions.logging_handler import LoggingActionHandler
-from emotion_detector.core.config import Config, ModelConfig
-from emotion_detector.core.types import (
+from emotion_detection_action.actions.base import BaseActionHandler
+from emotion_detection_action.actions.logging_handler import LoggingActionHandler
+from emotion_detection_action.core.config import Config, ModelConfig
+from emotion_detection_action.core.types import (
     ActionCommand,
     DetectionResult,
     EmotionResult,
     PipelineResult,
     ProcessingMode,
 )
-from emotion_detector.detection.face import FaceDetector
-from emotion_detector.detection.voice import VoiceActivityDetector
-from emotion_detector.emotion.facial import FacialEmotionRecognizer
-from emotion_detector.emotion.fusion import EmotionFusion
-from emotion_detector.emotion.speech import SpeechEmotionRecognizer
-from emotion_detector.inputs.audio import AudioInput
-from emotion_detector.inputs.base import AudioChunk, VideoFrame
-from emotion_detector.inputs.image import ImageInput
-from emotion_detector.inputs.video import VideoInput
-from emotion_detector.models.vla.base import BaseVLAModel, VLAInput
-from emotion_detector.models.vla.openvla import OpenVLAModel
+from emotion_detection_action.detection.face import FaceDetector
+from emotion_detection_action.detection.voice import VoiceActivityDetector
+from emotion_detection_action.emotion.facial import FacialEmotionRecognizer
+from emotion_detection_action.emotion.fusion import EmotionFusion
+from emotion_detection_action.emotion.speech import SpeechEmotionRecognizer
+from emotion_detection_action.inputs.audio import AudioInput
+from emotion_detection_action.inputs.base import AudioChunk, VideoFrame
+from emotion_detection_action.inputs.image import ImageInput
+from emotion_detection_action.inputs.video import VideoInput
+from emotion_detection_action.models.vla.base import BaseVLAModel, VLAInput
+from emotion_detection_action.models.vla.openvla import OpenVLAModel
 
 
 class EmotionDetector:
@@ -41,7 +41,7 @@ class EmotionDetector:
     - VLA-based action generation
 
     Example:
-        >>> from emotion_detector import EmotionDetector, Config
+        >>> from emotion_detection_action import EmotionDetector, Config
 
         >>> # Create detector with default config
         >>> detector = EmotionDetector()

@@ -1,2 +1,2 @@
-"""Test suite for emotion-detector SDK."""
+"""Test suite for emotion-detection-action SDK."""
 

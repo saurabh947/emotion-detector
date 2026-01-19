@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator, Callable
 import numpy as np
 from scipy.io import wavfile
 
-from emotion_detector.inputs.base import AudioChunk, BaseInput
+from emotion_detection_action.inputs.base import AudioChunk, BaseInput
 
 # Try to import sounddevice, but make it optional
 try:

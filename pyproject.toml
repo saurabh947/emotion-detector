@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "emotion-detector"
+name = "emotion-detection-action"
 version = "0.1.0"
 description = "Human emotion detection SDK for robotics using Vision-Language-Action models"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Emotion Detector Contributors"}
+    {name = "Emotion Detection Action Contributors"}
 ]
 keywords = ["emotion", "detection", "robotics", "vla", "vision", "language", "action"]
 classifiers = [
@@ -56,15 +56,15 @@ vla = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/emotion-detector/emotion-detector"
-Documentation = "https://github.com/emotion-detector/emotion-detector#readme"
-Repository = "https://github.com/emotion-detector/emotion-detector"
+Homepage = "https://github.com/saurabh947/emotion-detector"
+Documentation = "https://github.com/saurabh947/emotion-detector#readme"
+Repository = "https://github.com/saurabh947/emotion-detector"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-emotion_detector = ["py.typed"]
+emotion_detection_action = ["py.typed"]
 
 [tool.black]
 line-length = 100

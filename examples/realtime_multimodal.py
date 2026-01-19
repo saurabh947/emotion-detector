@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Real-time multimodal emotion detection example.
 
-This example shows video (facial) and audio (speech) emotion detection
-with real-time FUSION. Three panels show:
+This example uses the high-level EmotionDetector API while showing
+separate panels for facial, audio, and fused emotion results.
+
+Three panels show:
     - FACIAL: Emotion from face (left panel)
     - AUDIO: Emotion from speech (right panel)  
-    - FUSED: Combined emotion using confidence-weighted fusion (bottom panel)
+    - FUSED: Combined emotion using configured fusion strategy (bottom panel)
 
 Supported emotions:
     - Facial: happy, sad, angry, fearful, surprised, disgusted, neutral (7)
@@ -23,33 +25,20 @@ Usage:
 """
 
 import argparse
+import asyncio
 import signal
 import sys
-import threading
 import time
 from dataclasses import dataclass
-from queue import Empty, Queue
-from typing import Any
 
 import cv2
 import numpy as np
 
-from emotion_detector.core.config import ModelConfig
-from emotion_detector.core.types import (
-    BoundingBox,
+from emotion_detection_action import Config, EmotionDetector
+from emotion_detection_action.core.types import (
     EmotionScores,
-    FaceDetection,
-    FacialEmotionResult,
-    SpeechEmotionResult,
-    VoiceDetection,
+    PipelineResult,
 )
-from emotion_detector.detection.face import FaceDetector
-from emotion_detector.detection.voice import VoiceActivityDetector
-from emotion_detector.emotion.facial import FacialEmotionRecognizer
-from emotion_detector.emotion.fusion import EmotionFusion
-from emotion_detector.emotion.speech import SpeechEmotionRecognizer
-from emotion_detector.inputs.audio import AudioInput
-from emotion_detector.inputs.video import VideoInput
 
 
 @dataclass
@@ -70,7 +59,6 @@ class AudioEmotionState:
     confidence: float = 0.0
     speech_detected: bool = False
     timestamp: float = 0.0
-    is_listening: bool = False
 
 
 @dataclass
@@ -97,128 +85,52 @@ EMOTION_COLORS = {
 }
 
 
-class AudioEmotionProcessor:
-    """Process audio in a separate thread for emotion detection."""
-
-    def __init__(self, sample_rate: int = 16000, chunk_duration: float = 1.0):
-        self.sample_rate = sample_rate
-        self.chunk_duration = chunk_duration
+def extract_states(result: PipelineResult) -> tuple[FacialEmotionState, AudioEmotionState, FusedEmotionState]:
+    """Extract facial, audio, and fused states from a PipelineResult.
+    
+    Args:
+        result: Pipeline result from EmotionDetector.
         
-        self._audio_input: AudioInput | None = None
-        self._vad: VoiceActivityDetector | None = None
-        self._speech_emotion: SpeechEmotionRecognizer | None = None
-        
-        self._state = AudioEmotionState()
-        self._state_lock = threading.Lock()
-        
-        self._running = False
-        self._thread: threading.Thread | None = None
-
-    def initialize(self) -> None:
-        """Initialize audio processing components."""
-        print("[Audio] Initializing voice activity detector...")
-        vad_config = ModelConfig(model_id="webrtcvad", device="cpu")
-        self._vad = VoiceActivityDetector(vad_config, aggressiveness=2)
-        self._vad.load()
-
-        print("[Audio] Initializing speech emotion recognizer...")
-        speech_config = ModelConfig(
-            model_id="superb/wav2vec2-base-superb-er",
-            device="cpu",
+    Returns:
+        Tuple of (facial_state, audio_state, fused_state).
+    """
+    now = time.time()
+    
+    # Extract facial state
+    facial_state = FacialEmotionState(timestamp=now)
+    if result.emotion.facial_result is not None:
+        fr = result.emotion.facial_result
+        facial_state = FacialEmotionState(
+            emotions=fr.emotions,
+            dominant=fr.emotions.dominant_emotion.value,
+            confidence=fr.confidence,
+            face_detected=True,
+            timestamp=now,
         )
-        self._speech_emotion = SpeechEmotionRecognizer(
-            speech_config,
-            target_sample_rate=self.sample_rate,
+    
+    # Extract audio state
+    audio_state = AudioEmotionState(timestamp=now)
+    if result.emotion.speech_result is not None:
+        sr = result.emotion.speech_result
+        audio_state = AudioEmotionState(
+            emotions=sr.emotions,
+            dominant=sr.emotions.dominant_emotion.value,
+            confidence=sr.confidence,
+            speech_detected=True,
+            timestamp=now,
         )
-        self._speech_emotion.load()
-        print("[Audio] Models loaded!")
-
-    def start(self, audio_device: int | None = None) -> None:
-        """Start audio processing in background thread."""
-        if self._running:
-            return
-
-        self._audio_input = AudioInput(
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-        )
-        
-        try:
-            self._audio_input.open_microphone(audio_device)
-            print(f"[Audio] Microphone opened (device: {audio_device or 'default'})")
-        except Exception as e:
-            print(f"[Audio] Failed to open microphone: {e}")
-            return
-
-        self._running = True
-        self._thread = threading.Thread(target=self._process_loop, daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        """Stop audio processing."""
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=2.0)
-        if self._audio_input:
-            self._audio_input.close()
-
-    def get_state(self) -> AudioEmotionState:
-        """Get current audio emotion state (thread-safe)."""
-        with self._state_lock:
-            return AudioEmotionState(
-                emotions=self._state.emotions,
-                dominant=self._state.dominant,
-                confidence=self._state.confidence,
-                speech_detected=self._state.speech_detected,
-                timestamp=self._state.timestamp,
-                is_listening=self._state.is_listening,
-            )
-
-    def _process_loop(self) -> None:
-        """Main audio processing loop (runs in thread)."""
-        while self._running:
-            try:
-                self._update_state(is_listening=True)
-                
-                # Read audio chunk
-                chunk = self._audio_input.read() if self._audio_input else None
-                if chunk is None:
-                    time.sleep(0.01)
-                    continue
-
-                # Voice activity detection
-                vad_result = self._vad.predict(chunk) if self._vad else None
-                
-                if vad_result and vad_result.is_speech:
-                    self._update_state(speech_detected=True)
-                    
-                    # Speech emotion recognition
-                    if self._speech_emotion:
-                        emotion_result = self._speech_emotion.predict(vad_result)
-                        self._update_state(
-                            emotions=emotion_result.emotions,
-                            dominant=emotion_result.emotions.dominant_emotion.value,
-                            confidence=emotion_result.confidence,
-                            timestamp=time.time(),
-                        )
-                        print(f"[Audio] Detected: {emotion_result.emotions.dominant_emotion.value} "
-                              f"({emotion_result.confidence:.0%})")
-                else:
-                    # No speech - decay the state after a while
-                    current = self.get_state()
-                    if time.time() - current.timestamp > 2.0:
-                        self._update_state(speech_detected=False, dominant="none")
-
-            except Exception as e:
-                print(f"[Audio] Error: {e}")
-                time.sleep(0.1)
-
-    def _update_state(self, **kwargs: Any) -> None:
-        """Update state thread-safely."""
-        with self._state_lock:
-            for key, value in kwargs.items():
-                if hasattr(self._state, key):
-                    setattr(self._state, key, value)
+    
+    # Extract fused state
+    fused_state = FusedEmotionState(
+        emotions=result.emotion.emotions,
+        dominant=result.emotion.dominant_emotion.value,
+        confidence=result.emotion.fusion_confidence,
+        facial_used=result.emotion.facial_result is not None,
+        audio_used=result.emotion.speech_result is not None,
+        timestamp=now,
+    )
+    
+    return facial_state, audio_state, fused_state
 
 
 class MultimodalDisplay:
@@ -245,8 +157,16 @@ class MultimodalDisplay:
         facial_state: FacialEmotionState,
         audio_state: AudioEmotionState,
         fused_state: FusedEmotionState,
+        faces: list | None = None,
     ) -> bool:
         """Update display with current states.
+
+        Args:
+            frame: Video frame to display.
+            facial_state: Current facial emotion state.
+            audio_state: Current audio emotion state.
+            fused_state: Current fused emotion state.
+            faces: List of detected faces (for drawing bounding boxes).
 
         Returns:
             False if window closed, True otherwise.
@@ -257,7 +177,14 @@ class MultimodalDisplay:
 
         display = frame.copy()
 
-        # Draw face detection box and label
+        # Draw face bounding boxes
+        if faces:
+            for face in faces:
+                x1, y1, x2, y2 = face.bbox.to_xyxy()
+                color = EMOTION_COLORS.get(facial_state.dominant, (255, 255, 255))
+                cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
+
+        # Draw face detection status and label
         self._draw_face_overlay(display)
 
         # Draw facial emotion panel (left side)
@@ -280,7 +207,6 @@ class MultimodalDisplay:
     def _draw_face_overlay(self, frame: np.ndarray) -> None:
         """Draw face detection and emotion on the video."""
         if not self._facial_state.face_detected:
-            # Show "No face" message
             cv2.putText(
                 frame,
                 "No face detected",
@@ -295,7 +221,6 @@ class MultimodalDisplay:
         emotion = self._facial_state.dominant
         color = EMOTION_COLORS.get(emotion, (255, 255, 255))
 
-        # Draw emotion label at top
         label = f"Face: {emotion} ({self._facial_state.confidence:.0%})"
         cv2.putText(
             frame,
@@ -314,7 +239,6 @@ class MultimodalDisplay:
         panel_x = 10
         panel_y = 50
 
-        # Semi-transparent background
         overlay = frame.copy()
         cv2.rectangle(
             overlay,
@@ -325,7 +249,6 @@ class MultimodalDisplay:
         )
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
 
-        # Title with icon
         cv2.putText(
             frame,
             "FACIAL",
@@ -336,11 +259,9 @@ class MultimodalDisplay:
             2,
         )
 
-        # Status indicator
         status_color = (0, 255, 0) if self._facial_state.face_detected else (0, 0, 255)
         cv2.circle(frame, (panel_x + panel_width - 20, panel_y + 20), 8, status_color, -1)
 
-        # Emotion bars
         self._draw_emotion_bars(
             frame,
             panel_x + 10,
@@ -356,7 +277,6 @@ class MultimodalDisplay:
         panel_x = frame.shape[1] - panel_width - 10
         panel_y = 50
 
-        # Semi-transparent background
         overlay = frame.copy()
         cv2.rectangle(
             overlay,
@@ -367,7 +287,6 @@ class MultimodalDisplay:
         )
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
 
-        # Title
         cv2.putText(
             frame,
             "AUDIO",
@@ -378,16 +297,12 @@ class MultimodalDisplay:
             2,
         )
 
-        # Status indicator (listening / speech detected)
         if self._audio_state.speech_detected:
-            status_color = (0, 255, 0)  # Green - speech detected
+            status_color = (0, 255, 0)
             status_text = "Speaking"
-        elif self._audio_state.is_listening:
-            status_color = (0, 255, 255)  # Yellow - listening
-            status_text = "Listening"
         else:
-            status_color = (0, 0, 255)  # Red - not active
-            status_text = "Inactive"
+            status_color = (0, 255, 255)
+            status_text = "Listening"
 
         cv2.circle(frame, (panel_x + panel_width - 20, panel_y + 20), 8, status_color, -1)
         cv2.putText(
@@ -400,7 +315,6 @@ class MultimodalDisplay:
             1,
         )
 
-        # Emotion bars
         self._draw_emotion_bars(
             frame,
             panel_x + 10,
@@ -416,7 +330,6 @@ class MultimodalDisplay:
         panel_x = (frame.shape[1] - panel_width) // 2
         panel_y = frame.shape[0] - panel_height - 10
 
-        # Semi-transparent background
         overlay = frame.copy()
         cv2.rectangle(
             overlay,
@@ -427,25 +340,23 @@ class MultimodalDisplay:
         )
         cv2.addWeighted(overlay, 0.8, frame, 0.2, 0, frame)
 
-        # Title
         cv2.putText(
             frame,
             "FUSED",
             (panel_x + 10, panel_y + 25),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
-            (0, 255, 128),  # Green-cyan
+            (0, 255, 128),
             2,
         )
 
-        # Show which modalities are being used
         sources = []
         if self._fused_state.facial_used:
             sources.append("Face")
         if self._fused_state.audio_used:
             sources.append("Audio")
         source_text = " + ".join(sources) if sources else "No data"
-        
+
         cv2.putText(
             frame,
             f"({source_text})",
@@ -456,8 +367,11 @@ class MultimodalDisplay:
             1,
         )
 
-        # Confidence indicator
-        conf_color = (0, 255, 0) if self._fused_state.confidence > 0.5 else (0, 255, 255) if self._fused_state.confidence > 0.3 else (0, 0, 255)
+        conf_color = (
+            (0, 255, 0) if self._fused_state.confidence > 0.5
+            else (0, 255, 255) if self._fused_state.confidence > 0.3
+            else (0, 0, 255)
+        )
         cv2.circle(frame, (panel_x + panel_width - 20, panel_y + 20), 8, conf_color, -1)
         cv2.putText(
             frame,
@@ -469,7 +383,6 @@ class MultimodalDisplay:
             1,
         )
 
-        # Dominant emotion highlight
         if self._fused_state.dominant != "none" and self._fused_state.emotions is not None:
             emotion_color = EMOTION_COLORS.get(self._fused_state.dominant, (255, 255, 255))
             cv2.putText(
@@ -482,7 +395,6 @@ class MultimodalDisplay:
                 2,
             )
 
-        # Emotion bars
         self._draw_emotion_bars(
             frame,
             panel_x + 10,
@@ -505,7 +417,6 @@ class MultimodalDisplay:
         max_bar_width = width - label_width - 10
 
         if emotions is None:
-            # Show placeholder
             cv2.putText(
                 frame,
                 "No data",
@@ -524,7 +435,6 @@ class MultimodalDisplay:
             color = EMOTION_COLORS.get(emotion, (255, 255, 255))
             bar_width = int(score * max_bar_width)
 
-            # Emotion name
             cv2.putText(
                 frame,
                 emotion[:7],
@@ -535,7 +445,6 @@ class MultimodalDisplay:
                 1,
             )
 
-            # Bar background
             bar_x = x + label_width
             cv2.rectangle(
                 frame,
@@ -545,7 +454,6 @@ class MultimodalDisplay:
                 -1,
             )
 
-            # Bar fill
             if bar_width > 0:
                 cv2.rectangle(
                     frame,
@@ -555,7 +463,6 @@ class MultimodalDisplay:
                     -1,
                 )
 
-            # Score text
             cv2.putText(
                 frame,
                 f"{score:.0%}",
@@ -569,173 +476,91 @@ class MultimodalDisplay:
             y_offset += bar_height + 4
 
 
-def run_multimodal_detection(camera_index: int = 0) -> None:
-    """Run multimodal emotion detection with fusion."""
-    
+async def run_multimodal_detection(camera_index: int = 0) -> None:
+    """Run multimodal emotion detection using high-level EmotionDetector API."""
+
     print("=" * 50)
     print("MULTIMODAL EMOTION DETECTOR")
+    print("Using EmotionDetector high-level API")
     print("Video (Facial) + Audio (Speech) + FUSION")
     print("=" * 50)
-    print("\nInitializing components...\n")
+    print("\nInitializing detector...\n")
 
-    # Initialize facial emotion components
-    print("[Video] Initializing face detector...")
-    face_config = ModelConfig(model_id="mtcnn", device="cpu")
-    face_detector = FaceDetector(face_config, threshold=0.9)
-    face_detector.load()
-
-    print("[Video] Initializing facial emotion recognizer...")
-    facial_config = ModelConfig(
-        model_id="trpakov/vit-face-expression",
+    # Configure detector - audio always enabled, no VLA for realtime
+    config = Config(
         device="cpu",
-    )
-    facial_emotion = FacialEmotionRecognizer(facial_config)
-    facial_emotion.load()
-    print("[Video] Models loaded!")
-
-    # Initialize audio processor (runs in separate thread)
-    audio_processor = AudioEmotionProcessor()
-    audio_processor.initialize()
-
-    # Initialize fusion module (confidence-weighted with threshold)
-    print("[Fusion] Initializing emotion fusion (confidence strategy, threshold=0.3)...")
-    fusion = EmotionFusion(
-        strategy="confidence",
-        confidence_threshold=0.3,
+        vla_enabled=False,
+        fusion_strategy="confidence",
+        fusion_confidence_threshold=0.3,
+        frame_skip=2,
+        verbose=False,
     )
 
-    # Initialize video input
-    video_input = VideoInput(frame_skip=2)
-    video_input.open(camera_index)
-
-    # Initialize display
     display = MultimodalDisplay()
     display.start()
 
-    # Start audio processing
-    audio_processor.start(audio_device=None)  # Default microphone
-
-    print("\n" + "=" * 50)
-    print("Running! Press ESC or Q to quit")
-    print("=" * 50 + "\n")
-
-    facial_state = FacialEmotionState()
-    fused_state = FusedEmotionState()
+    # Track last states for when no result is returned
+    last_facial = FacialEmotionState()
+    last_audio = AudioEmotionState()
+    last_fused = FusedEmotionState()
     frame_count = 0
-    
-    # Cache for facial emotion result (for fusion)
-    last_facial_result: FacialEmotionResult | None = None
-    last_face: FaceDetection | None = None
 
     try:
-        while True:
-            # Read video frame
-            frame_obj = video_input.read()
-            if frame_obj is None:
-                break
+        with EmotionDetector(config) as detector:
+            print("\n" + "=" * 50)
+            print("Running! Press ESC or Q to quit")
+            print("=" * 50 + "\n")
 
-            frame = frame_obj.data
-            frame_count += 1
+            # Stream with audio always enabled (audio_source=0 for default mic)
+            async for result in detector.stream(video_source=camera_index, audio_source=0):
+                frame_count += 1
 
-            # Convert BGR to RGB for face detection
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Extract states from result
+                facial_state, audio_state, fused_state = extract_states(result)
 
-            # Face detection
-            faces = face_detector.predict(rgb_frame)
+                # Update last known states
+                if facial_state.face_detected:
+                    last_facial = facial_state
+                if audio_state.speech_detected:
+                    last_audio = audio_state
+                last_fused = fused_state
 
-            if faces:
-                # Get emotion for first face
-                face = faces[0]
-                result = facial_emotion.predict(face)
-                last_facial_result = result
-                last_face = face
+                # Get frame and faces for display
+                frame = result.detection.frame
+                if frame is None:
+                    continue
 
-                facial_state = FacialEmotionState(
-                    emotions=result.emotions,
-                    dominant=result.emotions.dominant_emotion.value,
-                    confidence=result.confidence,
-                    face_detected=True,
-                    timestamp=time.time(),
-                )
+                faces = result.detection.faces
 
-                # Draw face box
-                x1, y1, x2, y2 = face.bbox.to_xyxy()
-                color = EMOTION_COLORS.get(facial_state.dominant, (255, 255, 255))
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            else:
-                facial_state = FacialEmotionState(face_detected=False)
-                last_facial_result = None
+                # Update display
+                if not display.update(frame, last_facial, last_audio, last_fused, faces):
+                    break
 
-            # Get audio state
-            audio_state = audio_processor.get_state()
-
-            # Create speech emotion result for fusion (if audio data available)
-            speech_result: SpeechEmotionResult | None = None
-            if audio_state.emotions is not None and audio_state.speech_detected:
-                # Create a dummy voice detection for the result
-                dummy_voice = VoiceDetection(
-                    is_speech=True,
-                    confidence=audio_state.confidence,
-                    start_time=0.0,
-                    end_time=1.0,
-                )
-                speech_result = SpeechEmotionResult(
-                    voice_detection=dummy_voice,
-                    emotions=audio_state.emotions,
-                    confidence=audio_state.confidence,
-                )
-
-            # Perform fusion
-            fused_state = FusedEmotionState()  # Reset
-            if last_facial_result is not None or speech_result is not None:
-                try:
-                    fused_result = fusion.fuse(
-                        facial_result=last_facial_result,
-                        speech_result=speech_result,
-                        timestamp=time.time(),
+                # Console output every 60 frames
+                if frame_count % 60 == 0:
+                    print(
+                        f"[Status] Frame {frame_count} | "
+                        f"Face: {last_facial.dominant} ({last_facial.confidence:.0%}) | "
+                        f"Audio: {last_audio.dominant} ({last_audio.confidence:.0%}) | "
+                        f"Fused: {last_fused.dominant} ({last_fused.confidence:.0%})"
                     )
-                    fused_state = FusedEmotionState(
-                        emotions=fused_result.emotions,
-                        dominant=fused_result.dominant_emotion.value,
-                        confidence=fused_result.fusion_confidence,
-                        facial_used=fused_result.facial_result is not None,
-                        audio_used=fused_result.speech_result is not None,
-                        timestamp=time.time(),
-                    )
-                except ValueError:
-                    # No results pass confidence threshold
-                    fused_state = FusedEmotionState(dominant="none")
-
-            # Update display
-            if not display.update(frame, facial_state, audio_state, fused_state):
-                break
-
-            # Console output every 60 frames
-            if frame_count % 60 == 0:
-                print(f"[Status] Frame {frame_count} | "
-                      f"Face: {facial_state.dominant} ({facial_state.confidence:.0%}) | "
-                      f"Audio: {audio_state.dominant} ({audio_state.confidence:.0%}) | "
-                      f"Fused: {fused_state.dominant} ({fused_state.confidence:.0%})")
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
     finally:
         print("\nShutting down...")
-        audio_processor.stop()
-        video_input.close()
         display.stop()
-        face_detector.unload()
-        facial_emotion.unload()
         print("Done!")
 
 
 def main() -> None:
     """Parse arguments and run multimodal detection."""
     parser = argparse.ArgumentParser(
-        description="Real-time multimodal emotion detection with fusion (video + audio + fused)"
+        description="Real-time multimodal emotion detection with 3 panels (facial + audio + fused)"
     )
     parser.add_argument(
-        "--camera", "-c",
+        "--camera",
+        "-c",
         type=int,
         default=0,
         help="Camera device index (default: 0)",
@@ -746,9 +571,8 @@ def main() -> None:
     # Handle Ctrl+C gracefully
     signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
 
-    run_multimodal_detection(camera_index=args.camera)
+    asyncio.run(run_multimodal_detection(camera_index=args.camera))
 
 
 if __name__ == "__main__":
     main()
-

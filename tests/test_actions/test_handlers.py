@@ -2,9 +2,9 @@
 
 import pytest
 
-from emotion_detector.actions.base import BaseActionHandler
-from emotion_detector.actions.logging_handler import LoggingActionHandler, MockActionHandler
-from emotion_detector.core.types import (
+from emotion_detection_action.actions.base import BaseActionHandler
+from emotion_detection_action.actions.logging_handler import LoggingActionHandler, MockActionHandler
+from emotion_detection_action.core.types import (
     ActionCommand,
     EmotionLabel,
     EmotionResult,

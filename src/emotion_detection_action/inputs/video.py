@@ -6,7 +6,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from emotion_detector.inputs.base import BaseInput, VideoFrame
+from emotion_detection_action.inputs.base import BaseInput, VideoFrame
 
 
 class VideoInput(BaseInput[VideoFrame]):

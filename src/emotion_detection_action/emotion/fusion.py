@@ -4,7 +4,7 @@ from typing import Literal
 
 import numpy as np
 
-from emotion_detector.core.types import (
+from emotion_detection_action.core.types import (
     EmotionResult,
     EmotionScores,
     FacialEmotionResult,

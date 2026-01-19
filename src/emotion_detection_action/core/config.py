@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from emotion_detector.core.types import ProcessingMode
+from emotion_detection_action.core.types import ProcessingMode
 
 
 @dataclass
