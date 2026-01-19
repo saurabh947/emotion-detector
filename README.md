@@ -5,137 +5,122 @@ Human emotion detection SDK for robotics using Vision-Language-Action (VLA) mode
 ## Features
 
 - **Multi-modal emotion detection**: Analyze emotions from video, images, and audio
-- **Face detection**: Automatic face detection using RetinaFace/MTCNN
-- **Voice activity detection**: Detect human speech in audio streams
-- **Facial emotion recognition**: Classify emotions from facial expressions
-- **Speech emotion recognition**: Analyze emotions from voice/speech
-- **Multimodal fusion**: Combine visual and audio emotion signals
-- **Configurable VLA backend**: Swap VLA models (default: OpenVLA-7B)
-- **Real-time & batch processing**: Support for both streaming and file-based inputs
+- **Face detection**: Automatic face detection using MTCNN (RetinaFace planned)
+- **Voice activity detection**: Detect human speech using WebRTC VAD
+- **Facial emotion recognition**: ViT-based classification (`trpakov/vit-face-expression`)
+- **Speech emotion recognition**: Wav2Vec2-based analysis (`ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition`)
+- **Multimodal fusion**: Combine visual and audio signals (average, weighted, max, confidence strategies)
+- **VLA action generation**: OpenVLA-7B for emotion-aware robot actions (swappable via model registry)
+- **Real-time & batch processing**: Streaming from webcam/mic or file-based processing
+- **Extensible action handlers**: Plug in custom robot control logic
 
 ## Installation
 
 ```bash
 pip install emotion-detector
-```
-
-For VLA model support:
-
-```bash
-pip install emotion-detector[vla]
+pip install emotion-detector[vla]  # For VLA support (requires GPU)
 ```
 
 ## Quick Start
 
-### Batch Processing
-
 ```python
 from emotion_detector import EmotionDetector, Config
 
-config = Config(
-    vla_model="openvla/openvla-7b",
-    device="cuda"
-)
+config = Config(device="cuda", vla_enabled=False)
 
-detector = EmotionDetector(config)
-
-# Process video and audio files
-results = detector.process(
-    video_path="recording.mp4",
-    audio_path="recording.wav"
-)
-
-for result in results:
-    print(f"Emotions: {result.emotions}")
-    print(f"Action: {result.action}")
+with EmotionDetector(config) as detector:
+    # Process video/image/audio files
+    results = detector.process(video_path="recording.mp4", audio_path="recording.wav")
+    
+    for result in results:
+        print(f"Emotion: {result.emotion.dominant_emotion.value}")
+        print(f"Confidence: {result.emotion.fusion_confidence:.2%}")
 ```
 
 ### Real-time Streaming
 
 ```python
-import asyncio
-from emotion_detector import EmotionDetector, Config
-
-config = Config(
-    vla_model="openvla/openvla-7b",
-    device="cuda",
-    mode="realtime"
-)
-
-detector = EmotionDetector(config)
-
-async def main():
-    async for result in detector.stream(video_source=0, audio_source=0):
-        print(f"Emotions: {result.emotions}")
-        print(f"Action: {result.action}")
-
-asyncio.run(main())
+async for result in detector.stream(video_source=0, audio_source=0):
+    print(f"Emotion: {result.emotion.dominant_emotion.value}")
 ```
+
+### Frame-by-Frame API
+
+- `detector.process_frame(frame, audio, timestamp)` - Process single frame with optional audio
+- `detector.get_emotion_only(frame, audio)` - Get emotion without action generation
 
 ## Architecture
 
 ```
 Input Sources → Detection Layer → Emotion Analysis → VLA Model → Actions
      │                │                  │               │           │
-  Video/Image    Face Detect      Facial Emotion    OpenVLA    (Stubbed)
-  Audio          Voice Detect     Speech Emotion
-                                  Fusion Module
+  VideoInput     FaceDetector     FacialEmotion     OpenVLA    ActionHandler
+  ImageInput     VoiceActivity    SpeechEmotion                (extensible)
+  AudioInput     Detector         EmotionFusion
 ```
 
 ## Configuration
 
-```python
-from emotion_detector import Config
-
-config = Config(
-    # VLA model configuration
-    vla_model="openvla/openvla-7b",
-    
-    # Device settings
-    device="cuda",  # or "cpu", "mps"
-    
-    # Processing mode
-    mode="batch",  # or "realtime"
-    
-    # Detection thresholds
-    face_detection_threshold=0.9,
-    voice_activity_threshold=0.5,
-    
-    # Emotion model settings
-    facial_emotion_model="trpakov/vit-face-expression",
-    speech_emotion_model="ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition",
-)
-```
+| Option | Default | Description |
+|--------|---------|-------------|
+| `vla_model` | `"openvla/openvla-7b"` | VLA model for action generation |
+| `vla_enabled` | `True` | Set `False` for emotion-only mode |
+| `device` | `"cuda"` | `"cuda"`, `"cpu"`, or `"mps"` |
+| `mode` | `"batch"` | `"batch"` or `"realtime"` |
+| `face_detection_threshold` | `0.9` | Face detection confidence threshold |
+| `facial_emotion_model` | `"trpakov/vit-face-expression"` | Facial emotion model |
+| `speech_emotion_model` | `"ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"` | Speech emotion model |
+| `fusion_strategy` | `"weighted"` | `"average"`, `"weighted"`, `"max"`, `"confidence"` |
+| `facial_weight` / `speech_weight` | `0.6` / `0.4` | Fusion weights for multimodal |
+| `frame_skip` | `1` | Process every nth frame |
+| `max_faces` | `5` | Maximum faces per frame |
+| `vad_aggressiveness` | `2` | VAD filtering (0-3, higher = stricter) |
 
 ## Supported Emotions
 
-- Happy
-- Sad
-- Angry
-- Fearful
-- Surprised
-- Disgusted
-- Neutral
+Happy, Sad, Angry, Fearful, Surprised, Disgusted, Neutral
+
+## Custom Action Handlers
+
+Extend `BaseActionHandler` to integrate with your robot:
+
+```python
+from emotion_detector.actions.base import BaseActionHandler
+
+class MyRobotHandler(BaseActionHandler):
+    def connect(self) -> bool: ...
+    def disconnect(self) -> None: ...
+    def execute(self, action: ActionCommand) -> bool: ...
+
+detector = EmotionDetector(config, action_handler=MyRobotHandler())
+```
+
+## Public API
+
+**Main exports**: `EmotionDetector`, `Config`, `EmotionResult`, `DetectionResult`, `ActionCommand`, `FaceDetection`, `VoiceDetection`, `ProcessingMode`
+
+## Examples
+
+| Script | Description |
+|--------|-------------|
+| `examples/basic_usage.py` | Image and video processing |
+| `examples/realtime_webcam.py` | Webcam with visualization |
+| `examples/realtime_multimodal.py` | Separate video + audio panels |
+| `examples/batch_processing.py` | Multi-file processing with reports |
 
 ## Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/emotion-detector/emotion-detector.git
-cd emotion-detector
-
-# Install in development mode
 pip install -e ".[dev]"
-
-# Run tests
 pytest
-
-# Format code
-black src tests
-ruff check src tests --fix
+black src tests && ruff check src tests --fix
 ```
+
+## Requirements
+
+- Python 3.10+, PyTorch 2.0+, OpenCV, HuggingFace Transformers
+- VLA: CUDA GPU (~16GB VRAM, 8-bit quantization available)
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
