@@ -2,11 +2,15 @@
 """Real-time multimodal emotion detection example.
 
 This example shows video (facial) and audio (speech) emotion detection
-SEPARATELY without fusion. Each modality has its own panel.
+with real-time FUSION. Three panels show:
+    - FACIAL: Emotion from face (left panel)
+    - AUDIO: Emotion from speech (right panel)  
+    - FUSED: Combined emotion using confidence-weighted fusion (bottom panel)
 
 Supported emotions:
     - Facial: happy, sad, angry, fearful, surprised, disgusted, neutral (7)
     - Speech: happy, sad, angry, neutral (4) - using SUPERB model
+    - Fused: All 7 emotions (confidence-weighted combination)
 
 Requirements:
     - Webcam connected to the system
@@ -31,10 +35,18 @@ import cv2
 import numpy as np
 
 from emotion_detector.core.config import ModelConfig
-from emotion_detector.core.types import EmotionScores
+from emotion_detector.core.types import (
+    BoundingBox,
+    EmotionScores,
+    FaceDetection,
+    FacialEmotionResult,
+    SpeechEmotionResult,
+    VoiceDetection,
+)
 from emotion_detector.detection.face import FaceDetector
 from emotion_detector.detection.voice import VoiceActivityDetector
 from emotion_detector.emotion.facial import FacialEmotionRecognizer
+from emotion_detector.emotion.fusion import EmotionFusion
 from emotion_detector.emotion.speech import SpeechEmotionRecognizer
 from emotion_detector.inputs.audio import AudioInput
 from emotion_detector.inputs.video import VideoInput
@@ -59,6 +71,17 @@ class AudioEmotionState:
     speech_detected: bool = False
     timestamp: float = 0.0
     is_listening: bool = False
+
+
+@dataclass
+class FusedEmotionState:
+    """Current state of fused (combined) emotion detection."""
+    emotions: EmotionScores | None = None
+    dominant: str = "none"
+    confidence: float = 0.0
+    facial_used: bool = False
+    audio_used: bool = False
+    timestamp: float = 0.0
 
 
 # Color scheme for emotions (BGR)
@@ -199,17 +222,18 @@ class AudioEmotionProcessor:
 
 
 class MultimodalDisplay:
-    """Display for showing both video and audio emotions separately."""
+    """Display for showing facial, audio, and fused emotions."""
 
     def __init__(self, window_name: str = "Multimodal Emotion Detector"):
         self.window_name = window_name
         self._facial_state = FacialEmotionState()
         self._audio_state = AudioEmotionState()
+        self._fused_state = FusedEmotionState()
 
     def start(self) -> None:
         """Start the display window."""
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(self.window_name, 1000, 600)
+        cv2.resizeWindow(self.window_name, 1000, 700)
 
     def stop(self) -> None:
         """Close the display window."""
@@ -220,6 +244,7 @@ class MultimodalDisplay:
         frame: np.ndarray,
         facial_state: FacialEmotionState,
         audio_state: AudioEmotionState,
+        fused_state: FusedEmotionState,
     ) -> bool:
         """Update display with current states.
 
@@ -228,6 +253,7 @@ class MultimodalDisplay:
         """
         self._facial_state = facial_state
         self._audio_state = audio_state
+        self._fused_state = fused_state
 
         display = frame.copy()
 
@@ -239,6 +265,9 @@ class MultimodalDisplay:
 
         # Draw audio emotion panel (right side)
         self._draw_audio_panel(display)
+
+        # Draw fused emotion panel (bottom center)
+        self._draw_fused_panel(display)
 
         cv2.imshow(self.window_name, display)
 
@@ -380,6 +409,88 @@ class MultimodalDisplay:
             self._audio_state.emotions,
         )
 
+    def _draw_fused_panel(self, frame: np.ndarray) -> None:
+        """Draw fused emotion panel at bottom center."""
+        panel_width = 280
+        panel_height = 220
+        panel_x = (frame.shape[1] - panel_width) // 2
+        panel_y = frame.shape[0] - panel_height - 10
+
+        # Semi-transparent background
+        overlay = frame.copy()
+        cv2.rectangle(
+            overlay,
+            (panel_x, panel_y),
+            (panel_x + panel_width, panel_y + panel_height),
+            (0, 0, 0),
+            -1,
+        )
+        cv2.addWeighted(overlay, 0.8, frame, 0.2, 0, frame)
+
+        # Title
+        cv2.putText(
+            frame,
+            "FUSED",
+            (panel_x + 10, panel_y + 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 128),  # Green-cyan
+            2,
+        )
+
+        # Show which modalities are being used
+        sources = []
+        if self._fused_state.facial_used:
+            sources.append("Face")
+        if self._fused_state.audio_used:
+            sources.append("Audio")
+        source_text = " + ".join(sources) if sources else "No data"
+        
+        cv2.putText(
+            frame,
+            f"({source_text})",
+            (panel_x + 80, panel_y + 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (150, 150, 150),
+            1,
+        )
+
+        # Confidence indicator
+        conf_color = (0, 255, 0) if self._fused_state.confidence > 0.5 else (0, 255, 255) if self._fused_state.confidence > 0.3 else (0, 0, 255)
+        cv2.circle(frame, (panel_x + panel_width - 20, panel_y + 20), 8, conf_color, -1)
+        cv2.putText(
+            frame,
+            f"{self._fused_state.confidence:.0%}",
+            (panel_x + panel_width - 55, panel_y + 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            conf_color,
+            1,
+        )
+
+        # Dominant emotion highlight
+        if self._fused_state.dominant != "none" and self._fused_state.emotions is not None:
+            emotion_color = EMOTION_COLORS.get(self._fused_state.dominant, (255, 255, 255))
+            cv2.putText(
+                frame,
+                f">> {self._fused_state.dominant.upper()} <<",
+                (panel_x + 70, panel_y + 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                emotion_color,
+                2,
+            )
+
+        # Emotion bars
+        self._draw_emotion_bars(
+            frame,
+            panel_x + 10,
+            panel_y + 60,
+            panel_width - 20,
+            self._fused_state.emotions,
+        )
+
     def _draw_emotion_bars(
         self,
         frame: np.ndarray,
@@ -459,11 +570,11 @@ class MultimodalDisplay:
 
 
 def run_multimodal_detection(camera_index: int = 0) -> None:
-    """Run multimodal emotion detection with separate video/audio processing."""
+    """Run multimodal emotion detection with fusion."""
     
     print("=" * 50)
     print("MULTIMODAL EMOTION DETECTOR")
-    print("Video (Facial) and Audio (Speech) - SEPARATE")
+    print("Video (Facial) + Audio (Speech) + FUSION")
     print("=" * 50)
     print("\nInitializing components...\n")
 
@@ -486,6 +597,13 @@ def run_multimodal_detection(camera_index: int = 0) -> None:
     audio_processor = AudioEmotionProcessor()
     audio_processor.initialize()
 
+    # Initialize fusion module (confidence-weighted with threshold)
+    print("[Fusion] Initializing emotion fusion (confidence strategy, threshold=0.3)...")
+    fusion = EmotionFusion(
+        strategy="confidence",
+        confidence_threshold=0.3,
+    )
+
     # Initialize video input
     video_input = VideoInput(frame_skip=2)
     video_input.open(camera_index)
@@ -502,7 +620,12 @@ def run_multimodal_detection(camera_index: int = 0) -> None:
     print("=" * 50 + "\n")
 
     facial_state = FacialEmotionState()
+    fused_state = FusedEmotionState()
     frame_count = 0
+    
+    # Cache for facial emotion result (for fusion)
+    last_facial_result: FacialEmotionResult | None = None
+    last_face: FaceDetection | None = None
 
     try:
         while True:
@@ -524,6 +647,8 @@ def run_multimodal_detection(camera_index: int = 0) -> None:
                 # Get emotion for first face
                 face = faces[0]
                 result = facial_emotion.predict(face)
+                last_facial_result = result
+                last_face = face
 
                 facial_state = FacialEmotionState(
                     emotions=result.emotions,
@@ -539,19 +664,58 @@ def run_multimodal_detection(camera_index: int = 0) -> None:
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             else:
                 facial_state = FacialEmotionState(face_detected=False)
+                last_facial_result = None
 
             # Get audio state
             audio_state = audio_processor.get_state()
 
+            # Create speech emotion result for fusion (if audio data available)
+            speech_result: SpeechEmotionResult | None = None
+            if audio_state.emotions is not None and audio_state.speech_detected:
+                # Create a dummy voice detection for the result
+                dummy_voice = VoiceDetection(
+                    is_speech=True,
+                    confidence=audio_state.confidence,
+                    start_time=0.0,
+                    end_time=1.0,
+                )
+                speech_result = SpeechEmotionResult(
+                    voice_detection=dummy_voice,
+                    emotions=audio_state.emotions,
+                    confidence=audio_state.confidence,
+                )
+
+            # Perform fusion
+            fused_state = FusedEmotionState()  # Reset
+            if last_facial_result is not None or speech_result is not None:
+                try:
+                    fused_result = fusion.fuse(
+                        facial_result=last_facial_result,
+                        speech_result=speech_result,
+                        timestamp=time.time(),
+                    )
+                    fused_state = FusedEmotionState(
+                        emotions=fused_result.emotions,
+                        dominant=fused_result.dominant_emotion.value,
+                        confidence=fused_result.fusion_confidence,
+                        facial_used=fused_result.facial_result is not None,
+                        audio_used=fused_result.speech_result is not None,
+                        timestamp=time.time(),
+                    )
+                except ValueError:
+                    # No results pass confidence threshold
+                    fused_state = FusedEmotionState(dominant="none")
+
             # Update display
-            if not display.update(frame, facial_state, audio_state):
+            if not display.update(frame, facial_state, audio_state, fused_state):
                 break
 
             # Console output every 60 frames
             if frame_count % 60 == 0:
                 print(f"[Status] Frame {frame_count} | "
-                      f"Face: {facial_state.dominant} | "
-                      f"Audio: {audio_state.dominant}")
+                      f"Face: {facial_state.dominant} ({facial_state.confidence:.0%}) | "
+                      f"Audio: {audio_state.dominant} ({audio_state.confidence:.0%}) | "
+                      f"Fused: {fused_state.dominant} ({fused_state.confidence:.0%})")
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
@@ -568,7 +732,7 @@ def run_multimodal_detection(camera_index: int = 0) -> None:
 def main() -> None:
     """Parse arguments and run multimodal detection."""
     parser = argparse.ArgumentParser(
-        description="Real-time multimodal emotion detection (video + audio separate)"
+        description="Real-time multimodal emotion detection with fusion (video + audio + fused)"
     )
     parser.add_argument(
         "--camera", "-c",

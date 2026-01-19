@@ -19,16 +19,17 @@ class EmotionFusion:
     into a unified emotion result using various fusion strategies.
 
     Example:
-        >>> fusion = EmotionFusion(strategy="weighted", visual_weight=0.6)
+        >>> fusion = EmotionFusion(strategy="confidence", confidence_threshold=0.3)
         >>> result = fusion.fuse(facial_result, speech_result, timestamp=1.5)
         >>> print(result.emotions.dominant_emotion)
     """
 
     def __init__(
         self,
-        strategy: Literal["average", "weighted", "max", "confidence"] = "weighted",
+        strategy: Literal["average", "weighted", "max", "confidence"] = "confidence",
         visual_weight: float = 0.6,
         audio_weight: float = 0.4,
+        confidence_threshold: float = 0.3,
     ) -> None:
         """Initialize the fusion module.
 
@@ -37,13 +38,16 @@ class EmotionFusion:
                 - "average": Simple average of all modalities
                 - "weighted": Weighted average based on visual/audio weights
                 - "max": Take maximum probability for each emotion
-                - "confidence": Weight by model confidence scores
+                - "confidence": Weight by model confidence scores (default)
             visual_weight: Weight for visual (facial) emotions (0-1).
             audio_weight: Weight for audio (speech) emotions (0-1).
+            confidence_threshold: Minimum confidence to include a modality in fusion.
+                Results below this threshold are ignored. Set to 0 to disable.
         """
         self.strategy = strategy
         self.visual_weight = visual_weight
         self.audio_weight = audio_weight
+        self.confidence_threshold = confidence_threshold
 
         # Normalize weights
         total = visual_weight + audio_weight
@@ -59,6 +63,9 @@ class EmotionFusion:
     ) -> EmotionResult:
         """Fuse emotion results from multiple modalities.
 
+        Applies confidence thresholding: results with confidence below
+        the threshold are treated as if they don't exist.
+
         Args:
             facial_result: Facial emotion recognition result.
             speech_result: Speech emotion recognition result.
@@ -68,54 +75,72 @@ class EmotionFusion:
             Fused emotion result.
 
         Raises:
-            ValueError: If no results are provided.
+            ValueError: If no results pass the confidence threshold.
         """
-        if facial_result is None and speech_result is None:
-            raise ValueError("At least one emotion result must be provided")
+        # Apply confidence thresholding
+        facial_valid = (
+            facial_result is not None and 
+            facial_result.confidence >= self.confidence_threshold
+        )
+        speech_valid = (
+            speech_result is not None and 
+            speech_result.confidence >= self.confidence_threshold
+        )
 
-        # Single modality cases
-        if facial_result is None and speech_result is not None:
-            return EmotionResult(
-                timestamp=timestamp,
-                emotions=speech_result.emotions,
-                facial_result=None,
-                speech_result=speech_result,
-                fusion_confidence=speech_result.confidence,
+        # Use original results only if they pass threshold
+        facial_to_use = facial_result if facial_valid else None
+        speech_to_use = speech_result if speech_valid else None
+
+        if facial_to_use is None and speech_to_use is None:
+            raise ValueError(
+                f"No emotion results pass confidence threshold ({self.confidence_threshold}). "
+                f"Facial: {facial_result.confidence if facial_result else 'N/A'}, "
+                f"Speech: {speech_result.confidence if speech_result else 'N/A'}"
             )
 
-        if speech_result is None and facial_result is not None:
+        # Single modality cases (after thresholding)
+        if facial_to_use is None and speech_to_use is not None:
             return EmotionResult(
                 timestamp=timestamp,
-                emotions=facial_result.emotions,
-                facial_result=facial_result,
-                speech_result=None,
-                fusion_confidence=facial_result.confidence,
+                emotions=speech_to_use.emotions,
+                facial_result=facial_result,  # Keep original for reference
+                speech_result=speech_to_use,
+                fusion_confidence=speech_to_use.confidence,
             )
 
-        # Both modalities available - fuse them
-        assert facial_result is not None and speech_result is not None
+        if speech_to_use is None and facial_to_use is not None:
+            return EmotionResult(
+                timestamp=timestamp,
+                emotions=facial_to_use.emotions,
+                facial_result=facial_to_use,
+                speech_result=speech_result,  # Keep original for reference
+                fusion_confidence=facial_to_use.confidence,
+            )
+
+        # Both modalities available and pass threshold - fuse them
+        assert facial_to_use is not None and speech_to_use is not None
 
         if self.strategy == "average":
-            fused_emotions = self._fuse_average(facial_result, speech_result)
+            fused_emotions = self._fuse_average(facial_to_use, speech_to_use)
         elif self.strategy == "weighted":
-            fused_emotions = self._fuse_weighted(facial_result, speech_result)
+            fused_emotions = self._fuse_weighted(facial_to_use, speech_to_use)
         elif self.strategy == "max":
-            fused_emotions = self._fuse_max(facial_result, speech_result)
+            fused_emotions = self._fuse_max(facial_to_use, speech_to_use)
         elif self.strategy == "confidence":
-            fused_emotions = self._fuse_confidence(facial_result, speech_result)
+            fused_emotions = self._fuse_confidence(facial_to_use, speech_to_use)
         else:
-            fused_emotions = self._fuse_weighted(facial_result, speech_result)
+            fused_emotions = self._fuse_weighted(facial_to_use, speech_to_use)
 
         # Calculate fusion confidence
         fusion_confidence = self._calculate_fusion_confidence(
-            facial_result, speech_result
+            facial_to_use, speech_to_use
         )
 
         return EmotionResult(
             timestamp=timestamp,
             emotions=fused_emotions,
-            facial_result=facial_result,
-            speech_result=speech_result,
+            facial_result=facial_to_use,
+            speech_result=speech_to_use,
             fusion_confidence=fusion_confidence,
         )
 

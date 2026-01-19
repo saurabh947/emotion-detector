@@ -102,8 +102,6 @@ flowchart LR
     VLA --> ActionStub
 ```
 
-
-
 ## Model Selection
 
 | Component | Recommended Model | HuggingFace Path ||-----------|------------------|------------------|| VLA (configurable) | OpenVLA-7B | `openvla/openvla-7b` || Face Detection | RetinaFace / MTCNN | `timesler/facenet-pytorch` || Facial Emotion | FER2013-based models | `trpakov/vit-face-expression` || Speech Emotion | Wav2Vec2-based | `ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition` |
@@ -161,8 +159,6 @@ emotion-detector/
 ├── README.md
 └── LICENSE
 ```
-
-
 
 ## Key Design Decisions
 

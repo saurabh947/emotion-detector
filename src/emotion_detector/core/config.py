@@ -49,9 +49,10 @@ class Config:
     speech_emotion_model: str = "superb/wav2vec2-base-superb-er"
 
     # Fusion settings
-    fusion_strategy: Literal["average", "weighted", "max", "learned"] = "weighted"
+    fusion_strategy: Literal["average", "weighted", "max", "confidence"] = "confidence"
     facial_weight: float = 0.6
     speech_weight: float = 0.4
+    fusion_confidence_threshold: float = 0.3  # Ignore predictions below this confidence
 
     # Performance settings
     batch_size: int = 1

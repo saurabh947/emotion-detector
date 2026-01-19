@@ -135,6 +135,7 @@ class EmotionDetector:
             strategy=self.config.fusion_strategy,
             visual_weight=self.config.facial_weight,
             audio_weight=self.config.speech_weight,
+            confidence_threshold=self.config.fusion_confidence_threshold,
         )
 
         # Initialize VLA model (optional)
