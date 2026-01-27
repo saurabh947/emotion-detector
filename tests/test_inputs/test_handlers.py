@@ -1,13 +1,9 @@
 """Tests for input handlers."""
 
-import tempfile
-from pathlib import Path
-
 import numpy as np
 import pytest
 
 from emotion_detection_action.inputs.base import AudioChunk, VideoFrame
-from emotion_detection_action.inputs.image import ImageInput
 
 
 class TestVideoFrame:
@@ -77,191 +73,95 @@ class TestAudioChunk:
         assert chunk.num_samples == 12345
 
 
-class TestImageInput:
-    """Tests for ImageInput handler."""
-
-    def test_supported_extensions(self):
-        """Test supported image extensions."""
-        expected = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff"}
-        assert ImageInput.SUPPORTED_EXTENSIONS == expected
-
-    def test_open_nonexistent_raises(self):
-        """Test opening non-existent file raises error."""
-        handler = ImageInput()
-        with pytest.raises(ValueError, match="Source does not exist"):
-            handler.open("/nonexistent/path/image.jpg")
-
-    def test_open_unsupported_format_raises(self):
-        """Test opening unsupported format raises error."""
-        with tempfile.NamedTemporaryFile(suffix=".xyz", delete=False) as f:
-            temp_path = f.name
-
-        try:
-            handler = ImageInput()
-            with pytest.raises(ValueError, match="Unsupported image format"):
-                handler.open(temp_path)
-        finally:
-            Path(temp_path).unlink()
-
-    def test_open_empty_directory_raises(self):
-        """Test opening empty directory raises error."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            handler = ImageInput()
-            with pytest.raises(ValueError, match="No supported images found"):
-                handler.open(temp_dir)
+class TestVideoInput:
+    """Tests for VideoInput handler."""
 
     def test_properties_before_open(self):
         """Test properties return defaults before opening."""
-        handler = ImageInput()
-        assert handler.total_images == 0
-        assert handler.current_index == 0
+        from emotion_detection_action.inputs.video import VideoInput
+
+        handler = VideoInput()
+        assert handler.current_frame == 0
+        assert handler.width == 0
+        assert handler.height == 0
         assert not handler.is_open
 
     def test_close_idempotent(self):
         """Test that close can be called multiple times."""
-        handler = ImageInput()
+        from emotion_detection_action.inputs.video import VideoInput
+
+        handler = VideoInput()
         handler.close()  # Should not raise
         handler.close()  # Should not raise
 
     def test_read_before_open(self):
         """Test reading before opening returns None."""
-        handler = ImageInput()
+        from emotion_detection_action.inputs.video import VideoInput
+
+        handler = VideoInput()
         assert handler.read() is None
 
     def test_context_manager(self):
         """Test using handler as context manager."""
-        handler = ImageInput()
+        from emotion_detection_action.inputs.video import VideoInput
+
+        handler = VideoInput()
         with handler as h:
             assert h is handler
 
+    def test_bgr_to_rgb(self):
+        """Test BGR to RGB conversion."""
+        from emotion_detection_action.inputs.video import VideoInput
 
-class TestImageInputWithFiles:
-    """Tests for ImageInput with actual files."""
+        bgr = np.zeros((100, 100, 3), dtype=np.uint8)
+        bgr[:, :, 0] = 255  # Blue channel
+        
+        rgb = VideoInput.bgr_to_rgb(bgr)
+        
+        assert rgb[:, :, 2].mean() == 255  # Red channel in RGB
+        assert rgb[:, :, 0].mean() == 0  # Blue channel in RGB
 
-    @pytest.fixture
-    def temp_image(self):
-        """Create a temporary test image."""
-        import cv2
 
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            temp_path = f.name
+class TestAudioInput:
+    """Tests for AudioInput handler."""
 
-        # Create a simple test image
-        img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        cv2.imwrite(temp_path, img)
+    def test_properties_before_open(self):
+        """Test properties return defaults before opening."""
+        from emotion_detection_action.inputs.audio import AudioInput
 
-        yield temp_path
+        handler = AudioInput()
+        assert handler.current_time == 0.0
+        assert not handler.is_open
 
-        Path(temp_path).unlink()
+    def test_close_idempotent(self):
+        """Test that close can be called multiple times."""
+        from emotion_detection_action.inputs.audio import AudioInput
 
-    @pytest.fixture
-    def temp_image_dir(self):
-        """Create a directory with test images."""
-        import cv2
+        handler = AudioInput()
+        handler.close()  # Should not raise
+        handler.close()  # Should not raise
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            for i in range(3):
-                img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-                cv2.imwrite(f"{temp_dir}/image_{i:02d}.png", img)
+    def test_read_before_open(self):
+        """Test reading before opening returns None."""
+        from emotion_detection_action.inputs.audio import AudioInput
 
-            yield temp_dir
-
-    def test_open_single_image(self, temp_image):
-        """Test opening a single image file."""
-        handler = ImageInput()
-        handler.open(temp_image)
-
-        assert handler.is_open
-        assert handler.total_images == 1
-
-        handler.close()
-
-    def test_read_single_image(self, temp_image):
-        """Test reading a single image."""
-        handler = ImageInput()
-        handler.open(temp_image)
-
-        frame = handler.read()
-
-        assert frame is not None
-        assert frame.data.shape == (100, 100, 3)
-        assert frame.frame_number == 0
-
-        # Second read should return None
+        handler = AudioInput()
         assert handler.read() is None
 
-        handler.close()
+    def test_context_manager(self):
+        """Test using handler as context manager."""
+        from emotion_detection_action.inputs.audio import AudioInput
 
-    def test_open_directory(self, temp_image_dir):
-        """Test opening a directory of images."""
-        handler = ImageInput()
-        handler.open(temp_image_dir)
+        handler = AudioInput()
+        with handler as h:
+            assert h is handler
 
-        assert handler.is_open
-        assert handler.total_images == 3
+    def test_chunk_size_calculation(self):
+        """Test chunk size is calculated from sample rate and duration."""
+        from emotion_detection_action.inputs.audio import AudioInput
 
-        handler.close()
+        handler = AudioInput(sample_rate=16000, chunk_duration=0.5)
+        assert handler._chunk_size == 8000
 
-    def test_iterate_directory(self, temp_image_dir):
-        """Test iterating through directory images."""
-        handler = ImageInput()
-        handler.open(temp_image_dir)
-
-        frames = list(handler)
-
-        assert len(frames) == 3
-        for i, frame in enumerate(frames):
-            assert frame.frame_number == i
-
-        handler.close()
-
-    def test_seek(self, temp_image_dir):
-        """Test seeking to specific image."""
-        handler = ImageInput()
-        handler.open(temp_image_dir)
-
-        assert handler.seek(2) is True
-        frame = handler.read()
-        assert frame is not None
-        assert frame.frame_number == 2
-
-        # Seek out of bounds
-        assert handler.seek(100) is False
-
-        handler.close()
-
-    def test_get_image_at(self, temp_image_dir):
-        """Test getting image at specific index."""
-        handler = ImageInput()
-        handler.open(temp_image_dir)
-
-        frame = handler.get_image_at(1)
-        assert frame is not None
-        assert frame.frame_number == 1
-
-        # Original position should be unchanged
-        next_frame = handler.read()
-        assert next_frame is not None
-        assert next_frame.frame_number == 0
-
-        handler.close()
-
-    def test_get_paths(self, temp_image_dir):
-        """Test getting list of image paths."""
-        handler = ImageInput()
-        handler.open(temp_image_dir)
-
-        paths = handler.get_paths()
-
-        assert len(paths) == 3
-        assert all(p.suffix == ".png" for p in paths)
-
-        handler.close()
-
-    def test_load_single_static(self, temp_image):
-        """Test static method for loading single image."""
-        img = ImageInput.load_single(temp_image)
-
-        assert img is not None
-        assert img.shape == (100, 100, 3)
-
+        handler2 = AudioInput(sample_rate=44100, chunk_duration=1.0)
+        assert handler2._chunk_size == 44100

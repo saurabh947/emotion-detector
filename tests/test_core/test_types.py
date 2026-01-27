@@ -13,7 +13,6 @@ from emotion_detection_action.core.types import (
     FaceDetection,
     FacialEmotionResult,
     PipelineResult,
-    ProcessingMode,
     SpeechEmotionResult,
     VoiceDetection,
 )
@@ -154,20 +153,6 @@ class TestEmotionLabel:
         """Test enum string values."""
         assert EmotionLabel.HAPPY.value == "happy"
         assert EmotionLabel.SAD.value == "sad"
-
-
-class TestProcessingMode:
-    """Tests for ProcessingMode enum."""
-
-    def test_modes(self):
-        """Test processing mode values."""
-        assert ProcessingMode.REALTIME.value == "realtime"
-        assert ProcessingMode.BATCH.value == "batch"
-
-    def test_from_string(self):
-        """Test creating mode from string."""
-        assert ProcessingMode("realtime") == ProcessingMode.REALTIME
-        assert ProcessingMode("batch") == ProcessingMode.BATCH
 
 
 class TestActionCommand:

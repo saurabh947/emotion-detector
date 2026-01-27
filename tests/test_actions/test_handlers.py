@@ -1,9 +1,14 @@
 """Tests for action handlers."""
 
+import json
 import pytest
+from unittest.mock import Mock, patch, MagicMock
 
 from emotion_detection_action.actions.base import BaseActionHandler
+from emotion_detection_action.actions.http_handler import HTTPActionHandler, WebSocketActionHandler
 from emotion_detection_action.actions.logging_handler import LoggingActionHandler, MockActionHandler
+from emotion_detection_action.actions.ros_handler import ROSActionHandler
+from emotion_detection_action.actions.serial_handler import SerialActionHandler
 from emotion_detection_action.core.types import (
     ActionCommand,
     EmotionLabel,
@@ -332,4 +337,239 @@ class TestMockActionHandler:
         assert len(handler.get_action_history()) == 0
         success, _ = handler.verify_expectations()
         assert success is True  # No expectations, no actions
+
+
+class TestHTTPActionHandler:
+    """Tests for HTTPActionHandler."""
+
+    def test_initialization(self):
+        """Test handler initialization."""
+        handler = HTTPActionHandler(
+            endpoint="http://localhost:8080/api/action",
+            method="POST",
+            timeout=5.0,
+        )
+
+        assert handler.endpoint == "http://localhost:8080/api/action"
+        assert handler.method == "POST"
+        assert handler.timeout == 5.0
+
+    def test_build_payload(self):
+        """Test payload building from action command."""
+        handler = HTTPActionHandler(endpoint="http://test.com/api")
+
+        action = ActionCommand(
+            action_type="greeting",
+            parameters={"message": "hello"},
+            confidence=0.9,
+        )
+
+        payload = handler._build_payload(action)
+
+        assert payload["action_type"] == "greeting"
+        assert payload["parameters"]["message"] == "hello"
+        assert payload["confidence"] == 0.9
+
+    @patch("emotion_detection_action.actions.http_handler.request.urlopen")
+    def test_execute_success(self, mock_urlopen):
+        """Test successful HTTP execution."""
+        # Mock response
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"status": "ok"}'
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        handler = HTTPActionHandler(endpoint="http://test.com/api")
+        handler._is_connected = True
+
+        action = ActionCommand(action_type="test")
+        result = handler.execute(action)
+
+        assert result is True
+        assert handler._success_count == 1
+
+    def test_get_statistics(self):
+        """Test getting statistics."""
+        handler = HTTPActionHandler(endpoint="http://test.com/api")
+        handler._success_count = 5
+        handler._error_count = 2
+
+        stats = handler.get_statistics()
+
+        assert stats["success_count"] == 5
+        assert stats["error_count"] == 2
+        assert stats["success_rate"] == pytest.approx(5/7, abs=0.01)
+
+
+class TestWebSocketActionHandler:
+    """Tests for WebSocketActionHandler."""
+
+    def test_initialization(self):
+        """Test handler initialization."""
+        handler = WebSocketActionHandler(
+            url="ws://localhost:8080/ws",
+            reconnect=True,
+        )
+
+        assert handler.url == "ws://localhost:8080/ws"
+        assert handler.reconnect is True
+
+    def test_not_connected_without_websocket(self):
+        """Test that connection fails without websocket library."""
+        handler = WebSocketActionHandler(url="ws://test.com/ws")
+
+        # Without websocket-client installed, this may fail
+        # We just test the handler was created correctly
+        assert handler._ws is None
+        assert handler.message_count == 0
+
+
+class TestSerialActionHandler:
+    """Tests for SerialActionHandler."""
+
+    def test_initialization(self):
+        """Test handler initialization."""
+        handler = SerialActionHandler(
+            port="/dev/ttyUSB0",
+            baudrate=115200,
+            message_format="json",
+        )
+
+        assert handler.port == "/dev/ttyUSB0"
+        assert handler.baudrate == 115200
+        assert handler.message_format == "json"
+
+    def test_format_json(self):
+        """Test JSON message formatting."""
+        handler = SerialActionHandler(port="/dev/ttyUSB0")
+
+        action = ActionCommand(
+            action_type="greeting",
+            parameters={"emotion": "happy"},
+            confidence=0.9,
+        )
+
+        message = handler._format_json(action)
+        data = json.loads(message.strip())
+
+        assert data["type"] == "greeting"
+        assert data["params"]["emotion"] == "happy"
+        assert data["conf"] == 0.9
+
+    def test_format_csv(self):
+        """Test CSV message formatting."""
+        handler = SerialActionHandler(port="/dev/ttyUSB0", message_format="csv")
+
+        action = ActionCommand(
+            action_type="acknowledge",
+            parameters={"emotion": "happy"},
+            confidence=0.9,
+        )
+
+        message = handler._format_csv(action)
+
+        # acknowledge=1, happy=0, confidence=90
+        assert message.strip() == "1,0,90"
+
+    def test_format_binary(self):
+        """Test binary message formatting."""
+        handler = SerialActionHandler(port="/dev/ttyUSB0", message_format="binary")
+
+        action = ActionCommand(
+            action_type="idle",
+            parameters={"emotion": "neutral"},
+            confidence=0.85,
+        )
+
+        message = handler._format_binary(action)
+
+        # idle=0, neutral=6, confidence=85
+        assert message.strip() == "A00E6C085"
+
+    def test_format_simple(self):
+        """Test simple message formatting."""
+        handler = SerialActionHandler(port="/dev/ttyUSB0", message_format="simple")
+
+        action = ActionCommand(
+            action_type="greeting",
+            parameters={"speed": 100, "angle": 45},
+            confidence=0.9,
+        )
+
+        message = handler._format_simple(action)
+
+        assert "greeting:" in message
+        assert "speed=100" in message
+        assert "angle=45" in message
+
+    def test_list_ports_static_method(self):
+        """Test listing available ports."""
+        # This just verifies the method exists and returns a list
+        ports = SerialActionHandler.list_ports()
+        assert isinstance(ports, list)
+
+    def test_action_codes(self):
+        """Test that all expected action codes are defined."""
+        expected_actions = [
+            "idle", "acknowledge", "comfort", "de_escalate",
+            "reassure", "wait", "retreat", "approach",
+        ]
+
+        for action in expected_actions:
+            assert action in SerialActionHandler.ACTION_CODES
+
+    def test_emotion_codes(self):
+        """Test that all expected emotion codes are defined."""
+        expected_emotions = [
+            "happy", "sad", "angry", "fearful",
+            "surprised", "disgusted", "neutral",
+        ]
+
+        for emotion in expected_emotions:
+            assert emotion in SerialActionHandler.EMOTION_CODES
+
+
+class TestROSActionHandler:
+    """Tests for ROSActionHandler."""
+
+    def test_initialization(self):
+        """Test handler initialization."""
+        handler = ROSActionHandler(
+            node_name="test_node",
+            action_topic="/test/action",
+        )
+
+        assert handler.node_name == "test_node"
+        assert handler.action_topic == "/test/action"
+
+    def test_is_ros_available(self):
+        """Test checking ROS availability."""
+        availability = ROSActionHandler.is_ros_available()
+
+        assert "ros1" in availability
+        assert "ros2" in availability
+        assert isinstance(availability["ros1"], bool)
+        assert isinstance(availability["ros2"], bool)
+
+    def test_get_statistics(self):
+        """Test getting statistics."""
+        handler = ROSActionHandler(
+            action_topic="/emotion_action",
+            emotion_topic="/emotion_result",
+        )
+        handler._message_count = 10
+
+        stats = handler.get_statistics()
+
+        assert stats["message_count"] == 10
+        assert stats["action_topic"] == "/emotion_action"
+        assert stats["emotion_topic"] == "/emotion_result"
+
+    def test_ros_version_detection(self):
+        """Test that ROS version is detected."""
+        handler = ROSActionHandler()
+
+        # Should be 0, 1, or 2 depending on installation
+        assert handler.ros_version in (0, 1, 2)
 

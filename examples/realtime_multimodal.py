@@ -14,6 +14,16 @@ Supported emotions:
     - Speech: happy, sad, angry, neutral (4) - using SUPERB model
     - Fused: All 7 emotions (confidence-weighted combination)
 
+Face detection models:
+    - mtcnn: Fast, good for real-time (default)
+    - retinaface: More accurate, better for challenging poses (requires: pip install retinaface)
+
+Temporal smoothing strategies:
+    - none: No smoothing (raw per-frame output)
+    - rolling: Rolling average over N frames
+    - ema: Exponential Moving Average (default, recommended)
+    - hysteresis: Requires sustained change before switching
+
 Requirements:
     - Webcam connected to the system
     - Microphone connected to the system
@@ -22,6 +32,8 @@ Requirements:
 Usage:
     python realtime_multimodal.py
     python realtime_multimodal.py --camera 1  # Use different camera
+    python realtime_multimodal.py --face-detection retinaface  # Use RetinaFace
+    python realtime_multimodal.py --smoothing ema --smoothing-alpha 0.2  # Smoother output
 """
 
 import argparse
@@ -239,15 +251,14 @@ class MultimodalDisplay:
         panel_x = 10
         panel_y = 50
 
-        overlay = frame.copy()
+        # Draw solid black background (not transparent)
         cv2.rectangle(
-            overlay,
+            frame,
             (panel_x, panel_y),
             (panel_x + panel_width, panel_y + panel_height),
             (0, 0, 0),
             -1,
         )
-        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
 
         cv2.putText(
             frame,
@@ -277,15 +288,14 @@ class MultimodalDisplay:
         panel_x = frame.shape[1] - panel_width - 10
         panel_y = 50
 
-        overlay = frame.copy()
+        # Draw solid black background (not transparent)
         cv2.rectangle(
-            overlay,
+            frame,
             (panel_x, panel_y),
             (panel_x + panel_width, panel_y + panel_height),
             (0, 0, 0),
             -1,
         )
-        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
 
         cv2.putText(
             frame,
@@ -330,15 +340,14 @@ class MultimodalDisplay:
         panel_x = (frame.shape[1] - panel_width) // 2
         panel_y = frame.shape[0] - panel_height - 10
 
-        overlay = frame.copy()
+        # Draw solid black background (not transparent)
         cv2.rectangle(
-            overlay,
+            frame,
             (panel_x, panel_y),
             (panel_x + panel_width, panel_y + panel_height),
             (0, 0, 0),
             -1,
         )
-        cv2.addWeighted(overlay, 0.8, frame, 0.2, 0, frame)
 
         cv2.putText(
             frame,
@@ -478,9 +487,12 @@ class MultimodalDisplay:
 
 async def run_multimodal_detection(
     camera_index: int = 0,
+    face_detection_model: str = "mtcnn",
     facial_model: str = "trpakov/vit-face-expression",
     speech_model: str = "superb/wav2vec2-base-superb-er",
     device: str = "cpu",
+    smoothing: str = "ema",
+    smoothing_alpha: float = 0.3,
 ) -> None:
     """Run multimodal emotion detection using high-level EmotionDetector API."""
 
@@ -489,8 +501,10 @@ async def run_multimodal_detection(
     print("Using EmotionDetector high-level API")
     print("Video (Facial) + Audio (Speech) + FUSION")
     print("=" * 50)
-    print(f"\nFacial model: {facial_model}")
+    print(f"\nFace detection: {face_detection_model}")
+    print(f"Facial model: {facial_model}")
     print(f"Speech model: {speech_model}")
+    print(f"Smoothing: {smoothing}" + (f" (alpha={smoothing_alpha})" if smoothing == "ema" else ""))
     print(f"Device: {device}")
     print("\nInitializing detector...\n")
 
@@ -498,10 +512,13 @@ async def run_multimodal_detection(
     config = Config(
         device=device,
         vla_enabled=False,
+        face_detection_model=face_detection_model,
         facial_emotion_model=facial_model,
         speech_emotion_model=speech_model,
         fusion_strategy="confidence",
         fusion_confidence_threshold=0.3,
+        smoothing_strategy=smoothing,
+        smoothing_ema_alpha=smoothing_alpha,
         frame_skip=2,
         verbose=False,
     )
@@ -521,8 +538,8 @@ async def run_multimodal_detection(
             print("Running! Press ESC or Q to quit")
             print("=" * 50 + "\n")
 
-            # Stream with audio always enabled (audio_source=0 for default mic)
-            async for result in detector.stream(video_source=camera_index, audio_source=0):
+            # Stream with audio always enabled (microphone=0 for default mic)
+            async for result in detector.stream(camera=camera_index, microphone=0):
                 frame_count += 1
 
                 # Extract states from result
@@ -576,6 +593,13 @@ def main() -> None:
         help="Camera device index (default: 0)",
     )
     parser.add_argument(
+        "--face-detection",
+        type=str,
+        default="mtcnn",
+        choices=["mtcnn", "retinaface"],
+        help="Face detection model: mtcnn (fast) or retinaface (accurate)",
+    )
+    parser.add_argument(
         "--facial-model",
         type=str,
         default="trpakov/vit-face-expression",
@@ -593,6 +617,19 @@ def main() -> None:
         default="cpu",
         help="Device to use: cpu, cuda, or mps (default: cpu)",
     )
+    parser.add_argument(
+        "--smoothing",
+        type=str,
+        default="ema",
+        choices=["none", "rolling", "ema", "hysteresis"],
+        help="Temporal smoothing strategy (default: ema)",
+    )
+    parser.add_argument(
+        "--smoothing-alpha",
+        type=float,
+        default=0.3,
+        help="EMA smoothing factor 0-1, lower=smoother (default: 0.3)",
+    )
 
     args = parser.parse_args()
 
@@ -601,9 +638,12 @@ def main() -> None:
 
     asyncio.run(run_multimodal_detection(
         camera_index=args.camera,
+        face_detection_model=args.face_detection,
         facial_model=args.facial_model,
         speech_model=args.speech_model,
         device=args.device,
+        smoothing=args.smoothing,
+        smoothing_alpha=args.smoothing_alpha,
     ))
 
 

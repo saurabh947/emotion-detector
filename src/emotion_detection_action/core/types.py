@@ -7,13 +7,6 @@ from typing import Any
 import numpy as np
 
 
-class ProcessingMode(str, Enum):
-    """Processing mode for the emotion detector."""
-
-    REALTIME = "realtime"
-    BATCH = "batch"
-
-
 class EmotionLabel(str, Enum):
     """Standard emotion labels."""
 

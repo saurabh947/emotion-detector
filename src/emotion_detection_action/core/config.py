@@ -3,8 +3,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from emotion_detection_action.core.types import ProcessingMode
-
 
 @dataclass
 class ModelConfig:
@@ -31,9 +29,6 @@ class Config:
     device: str = "cuda"  # "cuda", "cpu", "mps"
     dtype: str = "float16"  # "float16", "float32", "bfloat16"
 
-    # Processing mode
-    mode: ProcessingMode | str = ProcessingMode.BATCH
-
     # Face detection settings
     face_detection_model: str = "retinaface"  # "retinaface" or "mtcnn"
     face_detection_threshold: float = 0.9
@@ -54,6 +49,13 @@ class Config:
     speech_weight: float = 0.4
     fusion_confidence_threshold: float = 0.3  # Ignore predictions below this confidence
 
+    # Temporal smoothing settings
+    smoothing_strategy: Literal["none", "rolling", "ema", "hysteresis"] = "none"
+    smoothing_window: int = 5  # Window size for rolling average
+    smoothing_ema_alpha: float = 0.3  # EMA smoothing factor (0-1, lower = smoother)
+    smoothing_hysteresis_threshold: float = 0.15  # Min confidence difference to change
+    smoothing_hysteresis_frames: int = 3  # Frames emotion must persist
+
     # Performance settings
     batch_size: int = 1
     max_faces: int = 5  # Maximum faces to process per frame
@@ -65,10 +67,6 @@ class Config:
 
     def __post_init__(self) -> None:
         """Validate and normalize configuration."""
-        # Normalize mode to ProcessingMode enum
-        if isinstance(self.mode, str):
-            self.mode = ProcessingMode(self.mode.lower())
-
         # Validate weights
         if not (0 <= self.facial_weight <= 1):
             raise ValueError("facial_weight must be between 0 and 1")
@@ -84,6 +82,16 @@ class Config:
         # Validate VAD aggressiveness
         if self.vad_aggressiveness not in (0, 1, 2, 3):
             raise ValueError("vad_aggressiveness must be 0, 1, 2, or 3")
+
+        # Validate smoothing settings
+        if self.smoothing_window < 1:
+            raise ValueError("smoothing_window must be >= 1")
+        if not 0 < self.smoothing_ema_alpha <= 1:
+            raise ValueError("smoothing_ema_alpha must be in (0, 1]")
+        if not 0 <= self.smoothing_hysteresis_threshold <= 1:
+            raise ValueError("smoothing_hysteresis_threshold must be in [0, 1]")
+        if self.smoothing_hysteresis_frames < 1:
+            raise ValueError("smoothing_hysteresis_frames must be >= 1")
 
     def get_face_detection_config(self) -> ModelConfig:
         """Get configuration for face detection model."""
@@ -123,6 +131,20 @@ class Config:
             load_in_8bit=True,  # VLA models are large, use quantization by default
         )
 
+    def get_smoothing_config(self) -> dict[str, Any]:
+        """Get configuration for temporal smoothing.
+
+        Returns:
+            Dictionary with smoothing configuration parameters.
+        """
+        return {
+            "strategy": self.smoothing_strategy,
+            "window_size": self.smoothing_window,
+            "ema_alpha": self.smoothing_ema_alpha,
+            "hysteresis_threshold": self.smoothing_hysteresis_threshold,
+            "hysteresis_frames": self.smoothing_hysteresis_frames,
+        }
+
     @classmethod
     def from_dict(cls, config_dict: dict[str, Any]) -> "Config":
         """Create Config from dictionary."""
@@ -133,8 +155,6 @@ class Config:
         result = {}
         for key in self.__dataclass_fields__:
             value = getattr(self, key)
-            if isinstance(value, ProcessingMode):
-                value = value.value
             result[key] = value
         return result
 

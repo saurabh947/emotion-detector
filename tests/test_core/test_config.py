@@ -3,7 +3,6 @@
 import pytest
 
 from emotion_detection_action.core.config import Config, ModelConfig
-from emotion_detection_action.core.types import ProcessingMode
 
 
 class TestModelConfig:
@@ -37,21 +36,7 @@ class TestConfig:
         config = Config()
         assert config.vla_model == "openvla/openvla-7b"
         assert config.device == "cuda"
-        assert config.mode == ProcessingMode.BATCH
         assert config.face_detection_threshold == 0.9
-
-    def test_mode_string_conversion(self):
-        """Test that string mode is converted to enum."""
-        config = Config(mode="realtime")
-        assert config.mode == ProcessingMode.REALTIME
-
-        config = Config(mode="batch")
-        assert config.mode == ProcessingMode.BATCH
-
-    def test_mode_enum_preserved(self):
-        """Test that enum mode is preserved."""
-        config = Config(mode=ProcessingMode.REALTIME)
-        assert config.mode == ProcessingMode.REALTIME
 
     def test_invalid_facial_weight(self):
         """Test validation of facial_weight."""
@@ -105,21 +90,18 @@ class TestConfig:
         """Test creating config from dictionary."""
         d = {
             "device": "cpu",
-            "mode": "realtime",
             "face_detection_threshold": 0.8,
             "unknown_key": "ignored",  # Should be ignored
         }
         config = Config.from_dict(d)
         assert config.device == "cpu"
-        assert config.mode == ProcessingMode.REALTIME
         assert config.face_detection_threshold == 0.8
 
     def test_to_dict(self):
         """Test converting config to dictionary."""
-        config = Config(device="cpu", mode=ProcessingMode.REALTIME)
+        config = Config(device="cpu")
         d = config.to_dict()
         assert d["device"] == "cpu"
-        assert d["mode"] == "realtime"  # Converted to string
         assert "vla_model" in d
 
     def test_fusion_settings(self):
@@ -132,4 +114,3 @@ class TestConfig:
         assert config.fusion_strategy == "weighted"
         assert config.facial_weight == 0.7
         assert config.speech_weight == 0.3
-

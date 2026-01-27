@@ -54,6 +54,20 @@ vla = [
     "accelerate>=0.24.0",
     "bitsandbytes>=0.41.0",
 ]
+retinaface = [
+    "retinaface>=0.0.13",
+    "tensorflow>=2.10.0",
+]
+serial = [
+    "pyserial>=3.5",
+]
+websocket = [
+    "websocket-client>=1.6.0",
+]
+robot = [
+    "pyserial>=3.5",
+    "websocket-client>=1.6.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/saurabh947/emotion-detector"

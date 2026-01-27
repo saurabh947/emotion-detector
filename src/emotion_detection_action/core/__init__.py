@@ -7,7 +7,6 @@ from emotion_detection_action.core.types import (
     DetectionResult,
     EmotionResult,
     FaceDetection,
-    ProcessingMode,
     VoiceDetection,
 )
 
@@ -19,6 +18,5 @@ __all__ = [
     "ActionCommand",
     "FaceDetection",
     "VoiceDetection",
-    "ProcessingMode",
 ]
 
