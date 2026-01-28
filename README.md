@@ -2,6 +2,22 @@
 
 Real-time human emotion detection SDK for robotics using Vision-Language-Action (VLA) models.
 
+## Get Started in 60 Seconds
+
+```bash
+# Clone and install
+git clone https://github.com/saurabh947/emotion-detection-action.git
+cd emotion-detection-action
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -e .
+
+# Run the real-time demo (requires webcam + microphone)
+python examples/realtime_multimodal.py
+```
+
+Press **ESC** or **Q** to quit the demo.
+
 ## Features
 
 - **Real-time emotion detection**: Live webcam + microphone processing
@@ -17,12 +33,23 @@ Real-time human emotion detection SDK for robotics using Vision-Language-Action 
 
 ## Installation
 
+### From Source (Recommended)
+
 ```bash
-pip install emotion-detection-action
-pip install emotion-detection-action[vla]        # For VLA support (requires GPU)
-pip install emotion-detection-action[retinaface] # For RetinaFace face detection
-pip install emotion-detection-action[robot]      # For serial + websocket handlers
-pip install emotion-detection-action[serial]     # For serial/Arduino support only
+git clone https://github.com/saurabh947/emotion-detection-action
+cd emotion-detection-action
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -e .
+```
+
+### Optional Dependencies
+
+```bash
+pip install -e ".[retinaface]"  # Better face detection (RetinaFace)
+pip install -e ".[robot]"       # Serial + WebSocket handlers
+pip install -e ".[vla]"         # VLA model support (requires GPU)
+pip install -e ".[dev]"         # Development tools (pytest, black, ruff)
 ```
 
 ## Quick Start
@@ -219,10 +246,27 @@ detector = EmotionDetector(config, action_handler=MyRobotHandler())
 
 ## Examples
 
-| Script | Description |
-|--------|-------------|
-| `examples/realtime_multimodal.py` | Real-time webcam + mic with 3 panels (facial, audio, fused) |
-| `examples/robot_handlers.py` | Demo of HTTP, Serial, ROS action handlers |
+### Real-time Demo
+
+```bash
+# Basic usage (default camera + microphone)
+python examples/realtime_multimodal.py
+
+# With options
+python examples/realtime_multimodal.py --camera 1              # Different camera
+python examples/realtime_multimodal.py --smoothing ema         # Smoother output
+python examples/realtime_multimodal.py --face-detection mtcnn  # Faster face detection
+```
+
+The demo shows 3 panels: **Facial emotion**, **Audio emotion**, and **Fused result**.
+
+### Robot Handlers Demo
+
+```bash
+python examples/robot_handlers.py --handler logging  # Test with console output
+python examples/robot_handlers.py --handler http --endpoint http://localhost:8080/api
+python examples/robot_handlers.py --handler serial --port /dev/ttyUSB0
+```
 
 ## Development
 
